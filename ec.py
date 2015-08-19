@@ -53,7 +53,7 @@ class EllipticCurve(object):
         return Point(x, y)
 
     def point_multiply(self, n, P):
-        """ return n * P """
+        """ Return n * P """
         if n == 0 or P == EllipticCurve.inf:
             return EllipticCurve.inf
         assert n > 0
@@ -75,10 +75,15 @@ class EllipticCurve(object):
             if not P.y % 2:
                 return '02' + format(P.x, '02x')
             return '03' + format(P.x, '02x')
-        return '04' + format(P.x, '02x') + format(P.y)
+        return '04' + format(P.x, '02x') + format(P.y, '02')
 
-    def shrink(self, e):
-        """ Returns leftmost n.bit_length() bits of e  """
+    def shrink_message(self, e):
+        """
+        Returns leftmost n.bit_length() bits of e.
+        This is used to produce e from m, where e
+        can be greater, but not longer in bits, to
+        the intereger order of the curve.
+        """
         en = e.bit_length()
         Ln = self.n.bit_length()
         z = e >> (en - Ln) if en > Ln else e
@@ -87,11 +92,11 @@ class EllipticCurve(object):
 
     def sign(self, d, e):
         """
-        Returns a serialized signature of message e using private key d.
+        Returns a DER serialized signature of message e using private key d.
         d is a private key (integer).
         e is an encoded message (integer).
         """
-        z = self.shrink(e)
+        z = self.shrink_message(e)
         k, r = None, None
         while True:
             k = self.randint(self.n - 1) + 1
@@ -102,10 +107,14 @@ class EllipticCurve(object):
             s = invmod(k, self.n) * (z + (r * d) % self.n) % self.n
             if s != 0:
                 break
+        # Byte sizes of r, s
         rBn = (r.bit_length() + 7) // 8
         sBn = (s.bit_length() + 7) // 8
+        # Byte sizes of components and sequence bytes
         mBn = 4 + rBn + sBn
+        # Numeric representation of the DER serialized sig
         sig = [0x30, mBn, 0x02, rBn, r, 0x02, sBn, s]
+        # Return a hex string of all the sig bytes
         return ''.join([
             '0' + f if len(f) % 2 else f \
             for f in [format(x, '02x') for x in sig]])
@@ -113,11 +122,17 @@ class EllipticCurve(object):
     def verify(self, pkey, e, sig):
         """
         Verifies a message e was signed by the owner of public key pkey.
+        Returns True if e was signed by the owner of pkey.
+        Raises AssertionError if the signature is invalid.
         pkey is a serialized public key.
         e is the encoded message.
         sig is the DER serialized message.
         """
-
+        # First we define modular exponent, which is
+        # used to calculate the y from a compressed
+        # public key.
+        # This only works for curves with an integer
+        # order n that is congruent to 3 mod 4.
         def pow_mod(x, y, z):
             n = 1
             while y:
@@ -126,7 +141,7 @@ class EllipticCurve(object):
                 y >>= 1
                 x = x * x % z
             return n
-
+        # Now unmarshall the public key
         P = Point(None, None)
         if pkey[:2] == '04':
             P = Point(int(pkey[2:66], 16), int(pkey[66:]))
@@ -138,21 +153,24 @@ class EllipticCurve(object):
             if y % 2 != y_parity:
                 y = -y % self.p
             P = Point(x, y)
+        # P must not be point at infinity
         assert P != EllipticCurve.inf
+        # P must lie on the curve
         y = P.y * P.y
         x = P.x * P.x * P.x + self.a * P.x + self.b
         assert y % self.p == x % self.p
-        assert sig[:2] == '30'
-        mBn = int(sig[2:4], 16)
-        assert mBn == len(sig[4:]) // 2
-        assert sig[4:6] == '02'
-        rBn = int(sig[6:8], 16)
-        r = int(sig[8:8 + rBn * 2], 16)
-        assert sig[8 + rBn * 2:8 + rBn * 2 + 2] == '02'
-        sBn = int(sig[8 + rBn * 2 + 2:8 + rBn * 2 + 4], 16)
-        assert sBn == len(sig[8 + rBn * 2 + 4:]) // 2
-        s = int(sig[8 + rBn * 2 + 4:], 16)
-        z = self.shrink(e)
+        # Now unmarshall the signature
+        assert sig[:2] == '30' # DER SEQUENCE byte
+        mBn = int(sig[2:4], 16) # bytes in message
+        assert sig[4:6] == '02' # DER INTEGER byte
+        rBn = int(sig[6:8], 16) # bytes in r
+        r = int(sig[8:8 + rBn * 2], 16) # r value
+        assert sig[8 + rBn * 2:8 + rBn * 2 + 2] == '02' # DER INTEGER byte
+        sBn = int(sig[8 + rBn * 2 + 2:8 + rBn * 2 + 4], 16) # bytes in s
+        assert sBn == len(sig[8 + rBn * 2 + 4:4 + mBn * 2]) // 2
+        s = int(sig[8 + rBn * 2 + 4:4 + mBn * 2], 16) # s value
+        # Now we have (r,s) and can verify
+        z = self.shrink_message(e)
         w = invmod(s, self.n)
         U1 = self.point_multiply(z * w % self.n, self.G)
         U2 = self.point_multiply(r * w % self.n, P)
@@ -160,14 +178,7 @@ class EllipticCurve(object):
         assert r == R.x
         return True
 
-if __name__ == '__main__':
-
-    """ Use secp256k1 to sign and verify a message """
-
-    from hashlib import sha256
-    from sys import stdout
-
-    E = EllipticCurve(
+secp256k1 = EllipticCurve(
     a = 0,
     b = 7,
     p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F,
@@ -176,7 +187,15 @@ if __name__ == '__main__':
     x = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798,
     y = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8))
 
-    k = EllipticCurve.randint(E.n - 2) + 1
+if __name__ == '__main__':
+
+    """ Use secp256k1 to sign and verify a message """
+
+    from hashlib import sha256
+    from sys import stdout
+
+    E = secp256k1
+    k = EllipticCurve.randint(E.n - 1) + 1
     pubk = E.public_key(k)
     m = 'TOO MANY SECRETS'
     e = int(sha256(sha256(m).digest()).hexdigest(), 16)
