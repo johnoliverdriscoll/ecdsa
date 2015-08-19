@@ -94,8 +94,8 @@ class EllipticCurve(object):
         z = self.shrink(e)
         k, r = None, None
         while True:
-            k = self.randint(E.n - 2) + 1
-            P = E.point_multiply(k, self.G)
+            k = self.randint(self.n - 1) + 1
+            P = self.point_multiply(k, self.G)
             r = P.x % self.n
             if r == 0:
                 continue
