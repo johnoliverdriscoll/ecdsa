@@ -1,6 +1,6 @@
 from collections import namedtuple
 from libnum import invmod
-from os import urandom
+from random import SystemRandom
 
 Point = namedtuple('Point', 'x y')
 
@@ -8,14 +8,7 @@ class EllipticCurve(object):
 
     inf = Point(None, None)
 
-    @staticmethod
-    def randint(n):
-        """ Uses os.urandom """
-        num_bytes = (n.bit_length() + 7) // 8
-        return int(urandom(num_bytes).encode('hex'), 16) % n
-
-    def __init__(self, a, b, p, G = None, n = None, \
-                 randint = lambda n: EllipticCurve.randint(n)):
+    def __init__(self, a, b, p, G = None, n = None):
         """
         a, b, p are the definition of the curve.
         G is the generator point.
@@ -26,7 +19,7 @@ class EllipticCurve(object):
         self.p = p
         self.n = n
         self.G = G
-        self.randint = randint
+        self.random = SystemRandom()
 
     def point_add(self, P, Q):
         """ Return P + Q """
@@ -80,7 +73,7 @@ class EllipticCurve(object):
     def shrink_message(self, e):
         """
         Returns leftmost n.bit_length() bits of e.
-        This is used to produce e from m, where e
+        This is used to produce z from e, where e
         can be greater, but not longer in bits, to
         the intereger order of the curve.
         """
@@ -99,7 +92,7 @@ class EllipticCurve(object):
         z = self.shrink_message(e)
         k, r = None, None
         while True:
-            k = self.randint(self.n - 1) + 1
+            k = self.random.randint(1, self.n - 1)
             P = self.point_multiply(k, self.G)
             r = P.x % self.n
             if r == 0:
@@ -113,7 +106,14 @@ class EllipticCurve(object):
         # Byte sizes of components and sequence bytes
         mBn = 4 + rBn + sBn
         # Numeric representation of the DER serialized sig
-        sig = [0x30, mBn, 0x02, rBn, r, 0x02, sBn, s]
+        sig = [ 0x30, # DER sequence byte
+                mBn,  # bytes in message
+                0x02, # DER integer byte
+                rBn,  # bytes in r
+                r,    # r value
+                0x02, # DER integer byte
+                sBn,  # bytes in s
+                s ]   # s value
         # Return a hex string of all the sig bytes
         return ''.join([
             '0' + f if len(f) % 2 else f \
@@ -195,7 +195,7 @@ if __name__ == '__main__':
     from sys import stdout
 
     E = secp256k1
-    k = EllipticCurve.randint(E.n - 1) + 1
+    k = E.random.randint(1, E.n - 1)
     pubk = E.public_key(k)
     m = 'TOO MANY SECRETS'
     e = int(sha256(sha256(m).digest()).hexdigest(), 16)
