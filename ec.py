@@ -1,5 +1,4 @@
 from collections import namedtuple
-from libnum import invmod
 from random import SystemRandom
 
 Point = namedtuple('Point', 'x y')
@@ -31,7 +30,7 @@ class EllipticCurve(object):
             if (P.y + Q.y) % self.p == 0:
                 return EllipticCurve.inf
             return self.point_double(P)
-        s = ((Q.y - P.y) * invmod(Q.x - P.x, self.p)) % self.p
+        s = ((Q.y - P.y) * EllipticCurve.invmod(Q.x - P.x, self.p)) % self.p
         x = (s * s - P.x - Q.x) % self.p
         y = (s * (P.x - x) - P.y) % self.p
         return Point(x, y)
@@ -40,7 +39,7 @@ class EllipticCurve(object):
         """ Return P + P """
         if P == EllipticCurve.inf:
             return P
-        s = ((3 * P.x * P.x + self.a) * invmod(2 * P.y, self.p)) % self.p
+        s = ((3 * P.x * P.x + self.a) * EllipticCurve.invmod(2 * P.y, self.p)) % self.p
         x = (s * s - 2 * P.x) % self.p
         y = (s * (P.x - x) - P.y) % self.p
         return Point(x, y)
@@ -60,6 +59,12 @@ class EllipticCurve(object):
             if not e & i and n & i:
                 R = self.point_add(R, inverse)
         return R
+
+    def private_key(self, randint = None):
+        """ Returns a random number """
+        if randint is None:
+            randint = self.random.randint
+        return randint(1, self.n - 1)
 
     def public_key(self, d, compressed=True):
         """ Return serialized public key """
@@ -83,7 +88,7 @@ class EllipticCurve(object):
         assert z.bit_length() <= Ln
         return z
 
-    def sign(self, d, e):
+    def sign(self, d, e, randint = None):
         """
         Returns a DER serialized signature of message e using private key d.
         d is a private key (integer).
@@ -91,13 +96,15 @@ class EllipticCurve(object):
         """
         z = self.shrink_message(e)
         k, r = None, None
+        if randint is None:
+            randint = self.random.randint
         while True:
-            k = self.random.randint(1, self.n - 1)
+            k = randint(1, self.n - 1)
             P = self.point_multiply(k, self.G)
             r = P.x % self.n
             if r == 0:
                 continue
-            s = invmod(k, self.n) * (z + (r * d) % self.n) % self.n
+            s = EllipticCurve.invmod(k, self.n) * (z + (r * d) % self.n) % self.n
             if s != 0:
                 break
         # Byte sizes of r, s
@@ -172,12 +179,31 @@ class EllipticCurve(object):
         s = int(sig[8 + rBn * 2 + 4:4 + mBn * 2], 16) # s value
         # Now we have (r,s) and can verify
         z = self.shrink_message(e)
-        w = invmod(s, self.n)
+        w = EllipticCurve.invmod(s, self.n)
         U1 = self.point_multiply(z * w % self.n, self.G)
         U2 = self.point_multiply(r * w % self.n, P)
         R = self.point_add(U1, U2)
         assert r == R.x
         return True
+
+    @staticmethod
+    def extended_gcd(a, b):
+        """ Extended GCD needed to compute modular inverse """
+        l, r = abs(a), abs(b)
+        x, lx, y, ly = 0, 1, 1, 0
+        while r:
+            l, (q, r) = r, divmod(l, r)
+            x, lx = lx - q * x, x
+            y, ly = ly - q * y, y
+        return l, lx * (-1 if a < 0 else 1), ly * (-1 if b < 0 else 1)
+
+    @staticmethod
+    def invmod(a, m):
+        """ Compute inverse of a mod m """
+        g, x, y = EllipticCurve.extended_gcd(a, m)
+        if g != 1:
+            raise ValueError
+        return x % m
 
 secp256k1 = EllipticCurve(
     a = 0,
@@ -196,7 +222,7 @@ if __name__ == '__main__':
     from sys import stdout
 
     E = secp256k1
-    k = E.random.randint(1, E.n - 1)
+    k = E.private_key()
     pubk = E.public_key(k)
     m = 'TOO MANY SECRETS'
     e = int(sha256(sha256(m).digest()).hexdigest(), 16)
