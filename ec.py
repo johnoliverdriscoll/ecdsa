@@ -147,6 +147,7 @@ class EllipticCurve(object):
             P = Point(int(pkey[2:66], 16), int(pkey[66:]))
         else:
             y_parity = int(pkey[:2]) - 2
+            assert(y_parity in [0, 1])
             x = int(pkey[2:], 16)
             a = (pow_mod(x, 3, self.p) + self.b) % self.p
             y = pow_mod(a, (self.p + 1) // 4, self.p)
