@@ -201,7 +201,6 @@ if __name__ == '__main__':
     m = 'TOO MANY SECRETS'
     e = int(sha256(sha256(m).digest()).hexdigest(), 16)
     sig = E.sign(k, e)
-    err = None
     print "k      : " + format(k, '02x')
     print "pubk   : " + pubk
     print 'm      : "' + m + '"'
