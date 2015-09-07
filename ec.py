@@ -276,38 +276,38 @@ if __name__ == '__main__':
         E.verify(pubk, e, sig)
     print
 
-    for i in range(5):
-        # Generate a key
-        c = "openssl ecparam -name secp256k1 -genkey"
-        p = Popen(c.split(' '), stdout=PIPE, stderr=PIPE)
-        k_pem, err = p.communicate()
-        if p.returncode:
-            raise Exception(err)
-        # Convert it to DER
-        c = "openssl ec -outform der"
-        p = Popen(c.split(' '), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        k_der, err = p.communicate(k_pem)
-        if p.returncode:
-            raise Exception(err)
-        k_len = int(k_der[6].encode('hex'), 16)
-        k = int(k_der[7:7+k_len].encode('hex'), 16)
-        # Derive public key
-        c = "openssl ec -pubout -conv_form compressed -outform der"
-        p = Popen(c.split(' '), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        pubk_der, err = p.communicate(k_pem)
-        if p.returncode:
-            raise Exception(err)
-        pubk = pubk_der[-33:].encode('hex')
-        assert pubk == E.public_key(k)
-        message_file = open('message.txt', 'wb')
-        message_file.write(m)
-        message_file.close()
-        try:
+    try:
+        msg_file = open('msg.txt', 'wb')
+        msg_file.write(m)
+        msg_file.close()
+        for i in range(10):
+            # Generate a key
+            c = "openssl ecparam -name secp256k1 -genkey"
+            p = Popen(c.split(' '), stdout=PIPE, stderr=PIPE)
+            k_pem, err = p.communicate()
+            if p.returncode:
+                raise Exception(err)
+            # Convert it to DER
+            c = "openssl ec -outform der"
+            p = Popen(c.split(' '), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+            k_der, err = p.communicate(k_pem)
+            if p.returncode:
+                raise Exception(err)
+            k_len = int(k_der[6].encode('hex'), 16)
+            k = int(k_der[7:7+k_len].encode('hex'), 16)
+            # Derive public key
+            c = "openssl ec -pubout -conv_form compressed -outform der"
+            p = Popen(c.split(' '), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+            pubk_der, err = p.communicate(k_pem)
+            if p.returncode:
+                raise Exception(err)
+            pubk = pubk_der[-33:].encode('hex')
+            assert pubk == E.public_key(k)
             print "verify openssl signature with ecdsa.py"
             print "k    : " + E.hex(k)
             print "pubk : " + pubk
-            for j in range(5):
-                c = "openssl dgst -sha256 -hex -sign /dev/stdin message.txt"
+            for j in range(10):
+                c = "openssl dgst -sha256 -hex -sign /dev/stdin msg.txt"
                 p = Popen(c.split(' '), stdin=PIPE, stdout=PIPE, stderr=PIPE)
                 sig_der, err = p.communicate(k_pem)
                 if p.returncode:
@@ -321,23 +321,23 @@ if __name__ == '__main__':
             print "verify ecdsa.py signature with openssl"
             print "k    : " + E.hex(k)
             print "pubk : " + pubk
-            for j in range(5):
+            for j in range(10):
                 sig = E.sign(k, e)
                 sig_bytes = [int(sig[i:i+2], 16) \
                              for i in range(0, len(sig), 2)]
-                sig_file = open('signature.der', 'wb')
+                sig_file = open('sig.der', 'wb')
                 array('B', sig_bytes).tofile(sig_file)
                 sig_file.close()
                 print "sig  : " + sig[:64]
                 print "     : " + sig[64:128]
                 print "     : " + sig[128:]
                 c = "openssl dgst -sha256 -prverify /dev/stdin " + \
-                    "-signature signature.der message.txt"
+                    "-signature sig.der msg.txt"
                 p = Popen(c.split(' '), stdin=PIPE, stdout=PIPE, stderr=PIPE)
                 out, err = p.communicate(k_pem)
                 if p.returncode:
                     raise Exception(err if err else out)
             print
-        finally:
-            remove('message.txt')
-            remove('signature.der')
+    finally:
+        remove('msg.txt')
+        remove('sig.der')
